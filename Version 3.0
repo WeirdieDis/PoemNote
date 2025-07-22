@@ -1,0 +1,111 @@
+import tkinter as tk
+from tkinter import messagebox
+import sqlite3
+from datetime import datetime
+
+# SQLite setup
+conn = sqlite3.connect("poems.db")
+cursor = conn.cursor()
+cursor.execute("""
+    CREATE TABLE IF NOT EXISTS poems (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT UNIQUE NOT NULL,
+        content TEXT NOT NULL,
+        saved_at TEXT NOT NULL
+    )
+""")
+conn.commit()
+
+# Save poem function
+def save_poem():
+    title = title_entry.get().strip()
+    poem = poem_text.get("1.0", tk.END).strip()
+    if not title or not poem:
+        messagebox.showwarning("Incomplete", "Please enter both the title and the poem.")
+        return
+
+    saved_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    cursor.execute("SELECT * FROM poems WHERE title = ?", (title,))
+    existing = cursor.fetchone()
+
+    if existing:
+        overwrite = messagebox.askyesno("Overwrite?", f"A poem titled '{title}' already exists. Overwrite it?")
+        if overwrite:
+            cursor.execute("UPDATE poems SET content = ?, saved_at = ? WHERE title = ?", (poem, saved_at, title))
+        else:
+            return
+    else:
+        cursor.execute("INSERT INTO poems (title, content, saved_at) VALUES (?, ?, ?)", (title, poem, saved_at))
+
+    conn.commit()
+    messagebox.showinfo("Saved", f"Poem '{title}' saved in the app.")
+    load_poem_titles()  # Refresh the listbox after saving
+
+# Open poem function
+def open_poem():
+    title = title_entry.get().strip()
+    if not title:
+        messagebox.showwarning("Missing Title", "Please enter the title of the poem you want to open.")
+        return
+
+    cursor.execute("SELECT content FROM poems WHERE title = ?", (title,))
+    result = cursor.fetchone()
+
+    if result:
+        poem_text.delete("1.0", tk.END)
+        poem_text.insert(tk.END, result[0])
+        messagebox.showinfo("Loaded", f"Poem '{title}' loaded.")
+    else:
+        messagebox.showerror("Not Found", f"No poem found with title '{title}'.")
+
+# Clear input fields
+def clear_fields():
+    title_entry.delete(0, tk.END)
+    poem_text.delete("1.0", tk.END)
+    poem_listbox.selection_clear(0, tk.END)
+
+# Load poem titles into the listbox
+def load_poem_titles():
+    poem_listbox.delete(0, tk.END)
+    cursor.execute("SELECT title FROM poems ORDER BY saved_at DESC")
+    for row in cursor.fetchall():
+        poem_listbox.insert(tk.END, row[0])
+
+# When user selects a poem from the listbox
+def on_poem_select(event):
+    selection = poem_listbox.curselection()
+    if selection:
+        selected_title = poem_listbox.get(selection[0])
+        title_entry.delete(0, tk.END)
+        title_entry.insert(0, selected_title)
+        open_poem()
+
+# GUI setup
+root = tk.Tk()
+root.title("PoemNote")
+
+tk.Label(root, text="Poem Title:").pack()
+title_entry = tk.Entry(root, width=40)
+title_entry.pack()
+
+tk.Label(root, text="Type/ Write/ Insert your poem here (You will most probably copy paste, anyway!)").pack()
+poem_text = tk.Text(root, height=20, width=50)
+poem_text.pack()
+
+# Listbox for poem titles
+tk.Label(root, text="Saved Poems:").pack(pady=(10,0))
+poem_listbox = tk.Listbox(root, height=8, width=40)
+poem_listbox.pack()
+poem_listbox.bind('<<ListboxSelect>>', on_poem_select)
+
+tk.Button(root, text="Open Poem", command=open_poem).pack(pady=5)
+tk.Button(root, text="Save Poem", command=save_poem).pack(pady=10)
+tk.Button(root, text="Clear", command=clear_fields).pack(pady=5)
+
+load_poem_titles()  # Load poem titles when app starts
+
+root.mainloop()
+
+# Close DB connection on exit
+conn.close()
